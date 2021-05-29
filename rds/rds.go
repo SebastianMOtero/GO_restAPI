@@ -2,19 +2,22 @@ package rds
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/jackc/pgx"
 	"github.com/jackc/pgx/pgxpool"
+	_ "github.com/lib/pq"
 )
 
 type rdsClient struct {
-	secretName string
+	connString string
 	conn       QueryCloser
 }
 
 type RdsClient interface {
 	Close()
 	Querier(ctx context.Context, tx pgx.Tx) (Querier, error)
+	TestConnection() error
 }
 
 type QueryCloser interface {
@@ -24,11 +27,12 @@ type QueryCloser interface {
 
 type Querier interface {
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 }
 
-func NewRDSClient(secretName string) RdsClient {
+func NewRDSClient(connString string) RdsClient {
 	return &rdsClient{
-		secretName: secretName,
+		connString: connString,
 	}
 }
 
@@ -57,6 +61,21 @@ func (db *rdsClient) connect(ctx context.Context) error {
 	}
 
 	var err error
-	db.conn, err = pgxpool.Connect(ctx, db.secretName)
+	db.conn, err = pgxpool.Connect(ctx, db.connString)
 	return err
+}
+
+func (db *rdsClient) TestConnection() error {
+	dbConnection, err := sql.Open("postgres", db.connString)
+	if err != nil {
+		return err
+	}
+	defer dbConnection.Close()
+
+	err = dbConnection.Ping()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
